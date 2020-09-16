@@ -14,6 +14,21 @@ use crate::query_builder::bind_collector::RawBytesBindCollector;
 use crate::query_builder::*;
 use crate::result::*;
 
+/// Mysql character set
+#[derive(Clone, Copy, Debug)]
+pub enum MysqlCharset {
+    UTF8,
+    UTF8MB4
+}
+impl AsRef<str> for MysqlCharset {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::UTF8 => "utf8",
+            Self::UTF8MB4 => "utf8mb4"
+        }
+    }
+}
+
 #[allow(missing_debug_implementations, missing_copy_implementations)]
 /// A connection to a MySQL database. Connection URLs should be in the form
 /// `mysql://[user[:password]@]host/database_name`
@@ -37,19 +52,7 @@ impl Connection for MysqlConnection {
     type TransactionManager = AnsiTransactionManager;
 
     fn establish(database_url: &str) -> ConnectionResult<Self> {
-        use crate::result::ConnectionError::CouldntSetupConfiguration;
-
-        let raw_connection = RawConnection::new();
-        let connection_options = ConnectionOptions::parse(database_url)?;
-        raw_connection.connect(&connection_options)?;
-        let conn = MysqlConnection {
-            raw_connection: raw_connection,
-            transaction_manager: AnsiTransactionManager::new(),
-            statement_cache: StatementCache::new(),
-        };
-        conn.set_config_options()
-            .map_err(CouldntSetupConfiguration)?;
-        Ok(conn)
+        Self::establish_with_charset(database_url, MysqlCharset::UTF8MB4)
     }
 
     #[doc(hidden)]
@@ -112,12 +115,33 @@ impl MysqlConnection {
         Ok(stmt)
     }
 
-    fn set_config_options(&self) -> QueryResult<()> {
+    /// Establishes a new connection to a mysql database
+    ///
+    /// With this method it is possible to define the utf8 charset instead
+    /// of the default utf8mb4. Unfortunately some databases are still on
+    /// very old mysql versions < 5.3, which do not understand utf8mb4.
+    pub fn establish_with_charset(database_url: &str, charset: MysqlCharset) -> ConnectionResult<Self> {
+        use crate::result::ConnectionError::CouldntSetupConfiguration;
+
+        let raw_connection = RawConnection::new();
+        let connection_options = ConnectionOptions::parse(database_url)?;
+        raw_connection.connect(&connection_options)?;
+        let conn = MysqlConnection {
+            raw_connection: raw_connection,
+            transaction_manager: AnsiTransactionManager::new(),
+            statement_cache: StatementCache::new(),
+        };
+        conn.set_config_options(charset)
+            .map_err(CouldntSetupConfiguration)?;
+        Ok(conn)
+    }
+
+    fn set_config_options(&self, charset: MysqlCharset) -> QueryResult<()> {
         self.execute("SET sql_mode=(SELECT CONCAT(@@sql_mode, ',PIPES_AS_CONCAT'))")?;
         self.execute("SET time_zone = '+00:00';")?;
-        self.execute("SET character_set_client = 'utf8mb4'")?;
-        self.execute("SET character_set_connection = 'utf8mb4'")?;
-        self.execute("SET character_set_results = 'utf8mb4'")?;
+        self.execute(&format!("SET character_set_client = '{}'", charset.as_ref()))?;
+        self.execute(&format!("SET character_set_connection = '{}'", charset.as_ref()))?;
+        self.execute(&format!("SET character_set_results = '{}'", charset.as_ref()))?;
         Ok(())
     }
 }
