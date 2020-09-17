@@ -17,7 +17,9 @@ use crate::result::*;
 /// Mysql character set
 #[derive(Clone, Copy, Debug)]
 pub enum MysqlCharset {
+    /// UTF8 character set
     UTF8,
+    /// UTF8MB4 character set
     UTF8MB4
 }
 impl AsRef<str> for MysqlCharset {

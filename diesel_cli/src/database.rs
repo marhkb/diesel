@@ -6,6 +6,9 @@ use diesel::sql_types::Bool;
 use diesel::*;
 use migrations_internals as migrations;
 
+#[cfg(feature = "mysql")]
+use diesel::mysql::MysqlCharset;
+
 use crate::database_error::{DatabaseError, DatabaseResult};
 
 use std::env;
@@ -116,7 +119,9 @@ impl InferConnection {
                 SqliteConnection::establish(database_url).map(InferConnection::Sqlite)
             }
             #[cfg(feature = "mysql")]
-            Backend::Mysql => MysqlConnection::establish(database_url).map(InferConnection::Mysql),
+            Backend::Mysql => {
+                MysqlConnection::establish_with_charset(database_url, MysqlCharset::UTF8).map(InferConnection::Mysql)
+            }
         }
         .map_err(Into::into)
     }
